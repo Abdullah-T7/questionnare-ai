@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 
 from .answer import answer_question
 from .db import Chunk, Document, SessionLocal, init_db
+from .excel import process_workbook
 from .ingestion import ingest_document
 
 
@@ -41,6 +43,27 @@ def ingest(files: list[UploadFile] = File(...)):
 @app.post("/ask")
 def ask(req: AskRequest):
     return answer_question(req.question)
+
+
+@app.post("/questionnaire/fill")
+def fill_questionnaire(file: UploadFile = File(...)):
+    if not file.filename.endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="Only .xlsx or .xlsm files are supported")
+    content = file.file.read()
+    output_bytes, stats = process_workbook(content)
+
+    filename_out = f"completed_{file.filename}"
+    return Response(
+        content=output_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename_out}"',
+            "X-Total-Questions": str(stats["total_questions"]),
+            "X-Drafted": str(stats["drafted"]),
+            "X-Needs-Expert": str(stats["needs_expert"]),
+            "X-Automation-Rate": str(stats["automation_rate"]),
+        },
+    )
 
 
 @app.get("/documents")

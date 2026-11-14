@@ -11,3 +11,5 @@ langchain-ollama
 langchain-text-splitters
 pypdf
 langgraph
+openpyxl
+
