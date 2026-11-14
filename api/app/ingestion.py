@@ -1,4 +1,5 @@
 import io
+import re
 from pathlib import Path
 
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
@@ -54,3 +55,21 @@ def ingest_document(filename: str, data: bytes) -> dict:
         session.add(doc)
         session.commit()
     return {"document": filename, "chunks": len(chunks)}
+
+
+def save_approved_answer(
+    question: str, answer: str, expert: str = "Security Team", role: str = "Compliance"
+) -> dict:
+    """
+    Saves an expert-approved Q&A pair into the knowledge base (Learning Loop).
+    Generates embeddings and indexes it in PostgreSQL so future queries retrieve it.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", question.lower()).strip("-")[:40]
+    filename = f"approved-qa-{slug}.md"
+    content = (
+        f"# Approved Policy Answers\n\n"
+        f"## {question}\n"
+        f"{answer}\n\n"
+        f"*Verified and approved by {expert} ({role})*"
+    )
+    return ingest_document(filename, content.encode("utf-8"))

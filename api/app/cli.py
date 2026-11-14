@@ -20,10 +20,15 @@ def main():
     elif cmd == "fill":
         in_path = pathlib.Path(sys.argv[2])
         out_path = pathlib.Path(sys.argv[3]) if len(sys.argv) > 3 else in_path.with_name(f"completed_{in_path.name}")
-        out_bytes, stats = process_workbook(in_path.read_bytes())
+        out_bytes, stats, escalations = process_workbook(in_path.read_bytes())
         out_path.write_bytes(out_bytes)
         print(f"Saved: {out_path}")
         print(json.dumps(stats, indent=2))
+        if escalations:
+            print("\nEscalations for Human Review:")
+            for e in escalations:
+                print(f"  [{e['expert_role']}] Row {e['row']}: {e['question']}")
+                print(f"    Reason: {e['expert_reason']}")
     else:
         print("Usage: python -m app.cli ingest <folder> | ask <question> | fill <questionnaire.xlsx>")
 

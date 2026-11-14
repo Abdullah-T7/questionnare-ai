@@ -1,14 +1,17 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 
 from .answer import answer_question
 from .db import Chunk, Document, SessionLocal, init_db
 from .excel import process_workbook
-from .ingestion import ingest_document
+from .ingestion import ingest_document, save_approved_answer
 
 
 @asynccontextmanager
@@ -22,6 +25,13 @@ app = FastAPI(title="Questionnaire AI", lifespan=lifespan)
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=3)
+
+
+class ApproveRequest(BaseModel):
+    question: str = Field(min_length=3)
+    answer: str = Field(min_length=3)
+    expert: str = Field(default="Security Expert")
+    role: str = Field(default="Governance, Risk & Compliance (GRC)")
 
 
 @app.get("/health")
@@ -46,13 +56,27 @@ def ask(req: AskRequest):
 
 
 @app.post("/questionnaire/fill")
-def fill_questionnaire(file: UploadFile = File(...)):
+def fill_questionnaire(
+    file: UploadFile = File(...),
+    format: Literal["file", "json"] = Query(default="file", description="Return styled .xlsx file or JSON summary with escalations"),
+):
     if not file.filename.endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Only .xlsx or .xlsm files are supported")
     content = file.file.read()
-    output_bytes, stats = process_workbook(content)
+    output_bytes, stats, escalations = process_workbook(content)
 
     filename_out = f"completed_{file.filename}"
+    out_path = Path("/data") / filename_out
+    out_path.write_bytes(output_bytes)
+
+    if format == "json":
+        return {
+            "filename": filename_out,
+            "download_url": f"/questionnaire/download/{filename_out}",
+            "stats": stats,
+            "escalations": escalations,
+        }
+
     return Response(
         content=output_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -64,6 +88,29 @@ def fill_questionnaire(file: UploadFile = File(...)):
             "X-Automation-Rate": str(stats["automation_rate"]),
         },
     )
+
+
+@app.get("/questionnaire/download/{filename}")
+def download_questionnaire(filename: str):
+    file_path = Path("/data") / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Questionnaire file not found")
+    return FileResponse(
+        path=file_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
+
+
+@app.post("/answers/approve")
+def approve_answer(req: ApproveRequest):
+    result = save_approved_answer(
+        question=req.question,
+        answer=req.answer,
+        expert=req.expert,
+        role=req.role,
+    )
+    return {"status": "saved", "details": result}
 
 
 @app.get("/documents")

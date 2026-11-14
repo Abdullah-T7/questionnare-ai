@@ -53,10 +53,11 @@ def detect_columns(sheet) -> tuple[int | None, int | None, int | None, int]:
     return 1, 2, None, 1
 
 
-def process_workbook(file_stream: BinaryIO | bytes) -> tuple[bytes, dict]:
+def process_workbook(file_stream: BinaryIO | bytes) -> tuple[bytes, dict, list[dict]]:
     """
     Reads an Excel file, processes questions through LangGraph, fills answers
     and citations while preserving all existing sheets, formatting, and formulas.
+    Returns (output_bytes, stats, escalations).
     """
     if isinstance(file_stream, bytes):
         file_stream = io.BytesIO(file_stream)
@@ -66,6 +67,7 @@ def process_workbook(file_stream: BinaryIO | bytes) -> tuple[bytes, dict]:
     total_processed = 0
     total_drafted = 0
     total_needs_expert = 0
+    escalations = []
 
     for sheet in wb.worksheets:
         if sheet.max_row < 2:
@@ -127,6 +129,13 @@ def process_workbook(file_stream: BinaryIO | bytes) -> tuple[bytes, dict]:
                 ans_cell.fill = EXPERT_FILL
                 cite_cell.value = f"Assignee: {role}\nReason: {reason}"
                 cite_cell.fill = EXPERT_FILL
+                escalations.append({
+                    "sheet": sheet.title,
+                    "row": r,
+                    "question": q_text,
+                    "expert_role": role,
+                    "expert_reason": reason,
+                })
 
     out = io.BytesIO()
     wb.save(out)
@@ -138,5 +147,5 @@ def process_workbook(file_stream: BinaryIO | bytes) -> tuple[bytes, dict]:
         "needs_expert": total_needs_expert,
         "automation_rate": f"{(total_drafted / total_processed * 100):.1f}%" if total_processed else "0%",
     }
-    return out.getvalue(), stats
+    return out.getvalue(), stats, escalations
 

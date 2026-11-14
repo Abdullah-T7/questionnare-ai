@@ -37,6 +37,21 @@ services:
       db: {condition: service_healthy}
       ollama: {condition: service_started}
 
+  n8n:
+    image: n8nio/n8n:latest
+    ports: ["5678:5678"]
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./data:/data
+    depends_on:
+      api: {condition: service_started}
+
 volumes:
   pgdata:
   ollama:
+  n8n_data:

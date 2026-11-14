@@ -1,0 +1,151 @@
+{
+  "name": "Security Questionnaire AI - Auto-fill & Slack Escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "questionnaire-intake",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "node-webhook-intake",
+      "name": "Intake Webhook (.xlsx Upload)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/questionnaire/fill?format=json",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data:file",
+        "options": {}
+      },
+      "id": "node-http-fill",
+      "name": "Call Questionnaire AI API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.stats.needs_expert }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "node-if-escalate",
+      "name": "Has Escalations?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "escalations",
+        "options": {}
+      },
+      "id": "node-item-lists",
+      "name": "Split Escalations",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "#security-reviews",
+        "text": "=🚨 *Security Questionnaire Escalation Required*\n*Department:* {{ $json.expert_role }}\n*Row:* {{ $json.row }} in '{{ $json.sheet }}'\n*Question:* {{ $json.question }}\n*Reason:* {{ $json.expert_reason }}\n\n👉 *Action Required:* Reply to this thread or submit the approved answer to `/answers/approve`.",
+        "otherOptions": {}
+      },
+      "id": "node-slack-alert",
+      "name": "Send Slack Alert to Expert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"completed\",\n  \"total_questions\": {{ $('Call Questionnaire AI API').item.json.stats.total_questions }},\n  \"auto_drafted\": {{ $('Call Questionnaire AI API').item.json.stats.drafted }},\n  \"escalated_to_experts\": {{ $('Call Questionnaire AI API').item.json.stats.needs_expert }},\n  \"automation_rate\": \"{{ $('Call Questionnaire AI API').item.json.stats.automation_rate }}\",\n  \"download_url\": \"http://localhost:8000{{ $('Call Questionnaire AI API').item.json.download_url }}\",\n  \"message\": \"Questionnaire processed. Questions requiring human input were routed to the respective teams on Slack.\"\n}",
+        "options": {}
+      },
+      "id": "node-respond-success",
+      "name": "Respond to Requester",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 420]
+    }
+  ],
+  "connections": {
+    "Intake Webhook (.xlsx Upload)": {
+      "main": [
+        [
+          {
+            "node": "Call Questionnaire AI API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Questionnaire AI API": {
+      "main": [
+        [
+          {
+            "node": "Has Escalations?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Escalations?": {
+      "main": [
+        [
+          {
+            "node": "Split Escalations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Requester",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Requester",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Escalations": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert to Expert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
+
